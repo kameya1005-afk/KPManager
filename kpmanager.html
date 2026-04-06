@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Krita AI Prompt Manager - Fantasy RPG Edition</title>
+    <style>
+        :root { --accent: #00d1ff; --bg: #2d2d2d; --panel: #3d3d3d; --input-bg: #1e1e1e; --neg: #ff4b4b; --style-col: #b066ff; --tab-bg: #444; --tab-active: #1e1e1e; }
+        
+        /* --- レイアウトを画面全体に拡張 --- */
+        html, body { height: 100vh; margin: 0; padding: 0; overflow: hidden; background: var(--panel); }
+        body { font-family: 'Segoe UI', "Meiryo", sans-serif; color: #eee; padding: 20px; box-sizing: border-box; display: flex; justify-content: center; }
+        .container { flex: 1; width: 100%; display: flex; flex-direction: column; min-width: 800px; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #555; padding-bottom: 10px; margin-bottom: 20px; flex-shrink: 0; }
+        
+        .main-layout { display: flex; gap: 20px; flex: 1; min-height: 0; }
+        /* 左右を2:3の比率に変更 */
+        .left-panel { flex: 2; min-width: 350px; display: flex; flex-direction: column; overflow-y: auto; padding-right: 5px; }
+        .right-panel { flex: 3; min-width: 450px; background: var(--input-bg); padding: 15px; border-radius: 8px; border: 1px solid #444; display: flex; flex-direction: column; min-height: 0; }
+        /* -------------------------------------------------- */
+
+        label { display: block; margin-bottom: 8px; font-weight: bold; font-size: 0.85em; }
+        .label-pos { color: var(--accent); }
+        .label-neg { color: var(--neg); }
+        .label-sty { color: var(--style-col); }
+
+        textarea, input[type="text"] { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: white; box-sizing: border-box; margin-bottom: 15px; font-family: inherit; resize: vertical; }
+        textarea:focus, input:focus { outline: 1px solid var(--accent); }
+        
+        /* ツールバー */
+        .toolbar { display: flex; gap: 10px; margin-bottom: 10px; }
+        .btn-file { background: #555; color: white; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 0.8em; }
+        .btn-file:hover { background: #666; }
+
+        /* プリセットUI用 */
+        .preset-section { background: #333; padding: 15px; border-radius: 8px; border: 1px solid #444; margin-top: auto; flex-shrink: 0; }
+        select { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: white; cursor: pointer; }
+        select:focus { outline: 1px solid var(--accent); }
+
+        /* 履歴UI用 */
+        .history-section { background: #333; padding: 15px; border-radius: 8px; border: 1px solid #444; margin-top: 15px; flex-shrink: 0; }
+        .history-list { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 5px; }
+        .history-item { background: #2a2a2a; border: 1px solid #555; padding: 10px; border-radius: 6px; transition: 0.2s; }
+        .history-item:hover { border-color: #777; }
+        .history-time { font-size: 0.75em; color: var(--accent); margin-bottom: 5px; display: block; font-weight: bold; }
+        .history-text { font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; color: #ddd; }
+        .history-actions { display: flex; gap: 5px; }
+        .btn-hist { background: #555; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em; font-weight: bold; flex: 1; transition: 0.2s; }
+        .btn-hist-restore { background: var(--accent); color: #000; }
+        .btn-hist:hover { opacity: 0.8; transform: translateY(-1px); }
+
+        /* 入力先セレクター */
+        .target-selector { display: flex; gap: 5px; margin-bottom: 15px; background: #333; padding: 5px; border-radius: 6px; flex-shrink: 0; }
+        .target-selector label { margin: 0; display: flex; align-items: center; cursor: pointer; padding: 8px 12px; border-radius: 4px; flex: 1; justify-content: center; font-size: 0.9em; transition: 0.2s; border: 1px solid transparent; }
+        .target-selector input { display: none; }
+        .target-selector label:has(input[value="pos"]:checked) { background: #1a4d5c; color: var(--accent); border-color: var(--accent); }
+        .target-selector label:has(input[value="style"]:checked) { background: #3e1a5c; color: var(--style-col); border-color: var(--style-col); }
+        .target-selector label:has(input[value="neg"]:checked) { background: #5c1a1a; color: var(--neg); border-color: var(--neg); }
+
+        /* タブUI */
+        .tabs-container { display: flex; flex-wrap: wrap; border-bottom: 2px solid var(--accent); margin-bottom: 15px; gap: 4px 2px; padding-bottom: 2px; flex-shrink: 0; }
+        .tab-btn { background: var(--tab-bg); color: #aaa; border: none; padding: 8px 15px; border-radius: 6px 6px 0 0; cursor: pointer; font-weight: bold; font-size: 0.85em; white-space: nowrap; transition: 0.2s; }
+        .tab-btn:hover { background: #555; color: #fff; }
+        .tab-btn.active { background: var(--accent); color: #000; }
+        .tab-add-btn { background: transparent; color: var(--accent); border: 1px dashed var(--accent); padding: 8px 15px; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 0.85em; }
+        .tab-add-btn:hover { background: rgba(0, 209, 255, 0.1); }
+
+        /* タグ表示エリア */
+        .tag-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; overflow-y: auto; padding: 5px; flex-grow: 1; align-content: start; }
+        .tag-item { display: flex; background: #444; border-radius: 4px; border: 1px solid #555; overflow: hidden; transition: opacity 0.2s; }
+        .tag-btn { flex-grow: 1; background: transparent; color: #fff; border: none; padding: 8px 5px; cursor: pointer; font-size: 0.85em; text-align: center; }
+        .tag-btn:hover { background: #555; }
+        .tag-btn span { display: block; font-size: 0.7em; color: #999; }
+        
+        /* 編集・削除ボタン */
+        .tag-edit { background: transparent; color: #999; border: none; padding: 0 8px; cursor: pointer; border-left: 1px solid #555; font-size: 0.9em; }
+        .tag-edit:hover { background: var(--accent); color: #000; }
+        .tag-del { background: transparent; color: #777; border: none; padding: 0 8px; cursor: pointer; border-left: 1px solid #555; }
+        .tag-del:hover { background: var(--neg); color: white; }
+
+        /* タブ操作メニュー用ボタン */
+        .tab-action-btn { background:transparent; border:none; color:#aaa; cursor:pointer; font-size:0.85em; text-decoration:underline; padding: 0 5px; }
+        .tab-action-btn:hover { color: #fff; }
+        .tab-action-btn-del { color: #cc6666; }
+        .tab-action-btn-del:hover { color: var(--neg); }
+
+        /* ドラッグ中のスタイル */
+        .dragging { opacity: 0.4; }
+
+        /* コピーボタン */
+        .action-btns { display: flex; gap: 10px; margin-bottom: 10px; }
+        .btn-copy { border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-weight: bold; flex: 1; color: #000; transition: 0.2s; }
+        .btn-pos-sty { background: var(--accent); }
+        .btn-neg-copy { background: var(--neg); color: #fff; }
+        .btn-copy:hover { opacity: 0.8; transform: translateY(-2px); }
+
+        /* ウェイト調整ボタン用 */
+        .weight-btns { display: flex; gap: 8px; margin-bottom: 10px; }
+        .btn-weight { flex: 1; padding: 10px 5px; color: white; font-weight: bold; font-size: 0.9em; border-radius: 6px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.2); transition: 0.2s; border: none; }
+        .btn-weight:hover { opacity: 0.8; transform: translateY(-2px); }
+        .btn-weight-up { background: var(--style-col); border: 1px solid #7d48b5; }
+        .btn-weight-down { background: #4b6b8a; border: 1px solid #3a536c; }
+        .btn-weight-remove { background: #6b4b4b; border: 1px solid #8a3a3a; }
+
+        .status { text-align: center; margin-top: 10px; font-weight: bold; font-size: 0.9em; height: 1.2em; flex-shrink: 0; }
+        #fileInput { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h2 style="margin:0;">Krita Prompt Manager <span style="font-size: 0.5em; color: #888; font-weight: normal;">(Fantasy RPG Edition)</span></h2>
+        <div class="toolbar">
+            <button class="btn-file" onclick="exportJSON()">📤 全体保存 (Export)</button>
+            <button class="btn-file" onclick="document.getElementById('fileInput').click()">📥 全体読込 (Import)</button>
+            <input type="file" id="fileInput" accept=".json" onchange="importJSON(event)">
+        </div>
+    </div>
+    
+    <div class="main-layout">
+        <div class="left-panel">
+            <div>
+                <label class="label-pos">🎨 Positive Prompt (メインの被写体)</label>
+                <textarea id="posInput" rows="5" placeholder="タグを選択..."></textarea>
+                
+                <label class="label-sty">✨ Style & Quality (画風・品質)</label>
+                <textarea id="styleInput" rows="2">masterpiece, best quality, highly detailed</textarea>
+
+                <label class="label-neg">🚫 Negative Prompt (除外したい要素)</label>
+                <textarea id="negInput" rows="3">low quality, bad anatomy, worst quality, text, watermark, deformed</textarea>
+                
+                <div class="action-btns">
+                    <button class="btn-copy btn-pos-sty" onclick="copyPrompt('pos')">ポジティブ ＋ スタイル をコピー</button>
+                    <button class="btn-copy btn-neg-copy" onclick="copyPrompt('neg')">ネガティブ をコピー</button>
+                </div>
+                
+                <div class="weight-btns">
+                    <button class="btn-weight btn-weight-up" onclick="changeWeight('(', ')')">✨ 強調 ()</button>
+                    <button class="btn-weight btn-weight-down" onclick="changeWeight('[', ']')">🔽 弱める []</button>
+                    <button class="btn-weight btn-weight-remove" onclick="decreaseWeight()">❌ 1段減らす</button>
+                </div>
+                
+                <button class="btn-file" style="width: 100%; padding: 10px; margin-bottom: 10px;" onclick="clearAll()">すべての入力をクリア</button>
+            </div>
+
+            <div class="preset-section">
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;">
+                    <label style="color: #fff; margin: 0;">💾 プリセット (お気に入り構成)</label>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="tab-action-btn" style="color:var(--accent);" onclick="exportPresets()" title="プリセットをファイルに出力">📤 出力</button>
+                        <button class="tab-action-btn" style="color:var(--style-col);" onclick="document.getElementById('presetFileInput').click()" title="ファイルからプリセットを読込">📥 読込</button>
+                        <input type="file" id="presetFileInput" accept=".json" style="display:none;" onchange="importPresets(event)">
+                    </div>
+                </div>
+                <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+                    <select id="presetSelect">
+                        <option value="">プリセットを選択...</option>
+                    </select>
+                    <button class="btn-file" onclick="loadPreset()" style="padding: 0 15px;">読込</button>
+                    <button class="btn-file" onclick="deletePreset()" style="padding: 0 15px; background: var(--neg);">削除</button>
+                </div>
+                <button class="btn-file" style="width: 100%; padding: 10px; border: 1px dashed var(--accent); background: transparent; color: var(--accent);" onclick="savePreset()">＋ 現在の入力を新規プリセットとして保存</button>
+            </div>
+
+            <div class="history-section">
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;">
+                    <label style="color: #fff; margin: 0;">📜 履歴 (コピー時自動保存: 最大30件)</label>
+                    <button class="tab-action-btn tab-action-btn-del" onclick="clearHistory()">履歴全消去</button>
+                </div>
+                <button class="btn-file" style="width: 100%; padding: 8px; margin-bottom: 10px; background: transparent; border: 1px solid #555; color: #ccc;" onclick="addHistory(true)">＋ 手動で現在の状態を履歴に保存</button>
+                <div class="history-list" id="historyList"></div>
+            </div>
+            
+            <div class="status" id="statusText"></div>
+        </div>
+
+        <div class="right-panel">
+            <label style="color: #fff;">▼ タグの入力先を選択</label>
+            <div class="target-selector">
+                <label><input type="radio" name="target" value="pos" checked> Positive</label>
+                <label><input type="radio" name="target" value="style"> Style</label>
+                <label><input type="radio" name="target" value="neg"> Negative</label>
+            </div>
+
+            <div style="display:flex; gap:5px; margin-bottom:15px; background:#333; padding:10px; border-radius:6px; border:1px solid #444; flex-shrink: 0;">
+                <input type="text" id="searchInput" placeholder="🔍 タグを全体検索 (例: girl, 剣)..." style="margin:0; flex:1;" onkeypress="if(event.key === 'Enter') searchTags()">
+                <button onclick="searchTags()" style="background:var(--accent); color:#000; border:none; padding:0 20px; border-radius:6px; cursor:pointer; font-weight:bold; white-space:nowrap;">検索</button>
+                <button onclick="clearSearch()" style="background:#555; color:#fff; border:none; padding:0 15px; border-radius:6px; cursor:pointer; font-weight:bold; display:none; white-space:nowrap;" id="clearSearchBtn">クリア</button>
+            </div>
+
+            <div class="tabs-container" id="tabsBox"></div>
+
+            <div id="tabActionMenu" style="display:flex; justify-content: space-between; align-items: flex-end; margin-bottom:10px; flex-shrink: 0;">
+                <label style="color: #fff; margin:0;">▼ <span id="currentTabName"></span> に新規タグ登録</label>
+                <div style="display:flex; gap: 5px; align-items: center;">
+                    <button class="tab-action-btn" onclick="renameCurrentTab()">名前変更</button>
+                    <span style="color:#555;">|</span>
+                    <button class="tab-action-btn" onclick="duplicateCurrentTab()">複製 (コピー)</button>
+                    <span style="color:#555;">|</span>
+                    <button class="tab-action-btn tab-action-btn-del" onclick="removeCurrentTab()">削除</button>
+                    <span style="color:#555; margin: 0 5px;">|</span>
+                    <button class="tab-action-btn" style="color:var(--accent);" onclick="exportCurrentTab()" title="現在のタブを独立したファイルとして出力">📤 タブ出力</button>
+                    <button class="tab-action-btn" style="color:var(--style-col);" onclick="document.getElementById('tabFileInput').click()" title="ファイルから新しいタブとして読込">📥 タブ読込</button>
+                    <input type="file" id="tabFileInput" accept=".json" style="display:none;" onchange="importTab(event)">
+                </div>
+            </div>
+            
+            <div id="addTagMenu" style="display:flex; gap:5px; margin-bottom:15px; flex-shrink: 0;">
+                <input type="text" id="newTagInput" placeholder="例: 夜の街,night, city, neon" style="margin:0;">
+                <button onclick="addNewTag()" style="background:#555; color:#fff; border:none; padding:0 15px; border-radius:6px; cursor:pointer; font-weight:bold;">追加</button>
+                <div style="width: 1px; background: #555; margin: 0 5px;"></div>
+                <button onclick="exportTagsText()" style="background:transparent; color:var(--accent); border:1px solid var(--accent); padding:0 10px; border-radius:6px; cursor:pointer; font-size: 0.85em; white-space: nowrap;" title="現在のタブのタグをテキストファイルに出力">📤 タグ出力</button>
+                <button onclick="document.getElementById('tagFileInput').click()" style="background:transparent; color:var(--style-col); border:1px solid var(--style-col); padding:0 10px; border-radius:6px; cursor:pointer; font-size: 0.85em; white-space: nowrap;" title="テキストファイルから現在のタブへタグを追加">📥 タグ読込</button>
+                <input type="file" id="tagFileInput" accept=".txt" style="display:none;" onchange="importTagsText(event)">
+            </div>
+
+            <div class="tag-container" id="tagBox"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const defaultData = {
+        "👩 女性": [
+            "女の子, 1girl", "女性, 1woman", "美女, beautiful woman, mature female", "美少女, bishoujo, extremely cute", 
+            "魔女, witch, female mage, witch hat", "サキュバス, succubus, demon wings, horns, female demon", 
+            "エルフ娘, elf girl, pointy ears, beautiful face, nature", "ハーピー, harpy, bird wings, feathers, monster girl", 
+            "人魚, mermaid, underwater, fish tail, upper body", "吸血鬼(女), female vampire, pale skin, red eyes, fangs"
+        ],
+        "👨 男性": [
+            "男の子, 1boy", "男性, 1man", "イケメン, handsome man, highly detailed face", "筋肉質, muscular man, pectorals, abs",
+            "老賢者, old man, wise sage, long beard", "オーク, orc, green skin, muscular, tusks, monster", 
+            "ゴブリン, goblin, short, green skin, long nose, wicked smile", "吸血鬼(男), vampire man, pale skin, aristocratic clothes", 
+            "ミノタウロス, minotaur, bull head, muscular, furry, monster", "竜人, dragonewt, dragon scales, tail, horns"
+        ],
+        "😊 表情": [
+            "笑顔, smile", "微笑み, light smile", "大笑い, laughing", "照れ/赤面, blushing", 
+            "ウインク, wink", "泣き顔, crying, tears", "怒り, angry", "驚き, surprised", 
+            "無表情, expressionless", "ジト目, half-closed eyes", "ドヤ顔, smug", "舌を出す, tongue out"
+        ],
+        "🤸 ポーズ": [
+            "立ち姿, standing", "座る, sitting", "膝をつく, kneeling, one knee", "しゃがむ, squatting, crouching",
+            "寝そべる/横たわる, lying down, on back", "うつ伏せ, lying on stomach", "戦闘態勢, combat stance, dynamic pose, action pose",
+            "武器を構える, holding weapon, aiming, ready to strike", "振り返る, looking back, over shoulder", 
+            "手を伸ばす, reaching out", "背中合わせ, back-to-back, two characters", "魔法詠唱, casting spell, glowing hands, arms up"
+        ],
+        "🎥 アングル": [
+            "正面, front view, looking at viewer", "横顔/側面, profile, side view", "背面, from behind, back view",
+            "俯瞰/上から, from above, high angle", "煽り/下から, from below, low angle", "全身, full body, wide shot",
+            "上半身(カウボーイ), upper body, cowboy shot", "クローズアップ/顔, close-up, face focus", 
+            "肩越し, over the shoulder", "広角/パース強調, dynamic angle, wide angle, dutch angle"
+        ],
+        "⚔️ 職業": [
+            "戦士, warrior, full armor, holding sword, battle stance", "騎士, knight, plate armor, shield, glowing sword", 
+            "魔法使い, mage, wizard robe, holding magic staff, casting spell", "僧侶/神官, cleric, holy vestments, holding cross, divine light", 
+            "盗賊/暗殺者, rogue, assassin, dark cloak, holding dual daggers, stealthy", "弓使い, archer, ranger, leather armor, holding bow, quiver", 
+            "吟遊詩人, bard, elegant clothes, feather hat, playing lute", "死霊術師, necromancer, dark robes, holding skull, ominous aura",
+            "狂戦士, berserker, barbarian, fur clothes, wielding giant axe", "錬金術師, alchemist, lab coat, goggles, holding potion"
+        ],
+        "🗺️ 場所": [
+            "ファンタジーの街, fantasy city, medieval town, cobblestone streets", "深い森, deep forest, ancient trees, nature, sunbeams", 
+            "雄大な城, majestic castle, fantasy architecture, dramatic sky", "ダンジョン, dark dungeon, stone walls, torches, creepy", 
+            "冒険者の酒場, tavern, wooden interior, barrels, fantasy pub", "荒野/戦場, wasteland, battlefield, barren landscape, rocky", 
+            "魔法の図書館, magical library, floating books, glowing dust, giant bookshelves", "古代の廃墟, ancient ruins, overgrown with vines, moss, mysterious",
+            "神秘の洞窟, crystal cave, glowing crystals, underground lake", "空中庭園, floating island, floating city, clouds, fantasy landscape"
+        ],
+        "✨ 画質・スタイル": [
+            "傑作, masterpiece", "最高品質, best quality", "超高精細, highly detailed, 8k resolution, intricate", 
+            "アニメ調, anime artwork, cel shading, studio ghibli style", "厚塗り/油絵風, impasto, oil painting style, brush strokes", 
+            "シネマティック光, cinematic lighting, dramatic lighting, volumetric lighting", "水彩画風, watercolor painting, soft colors, pastel", 
+            "ダークファンタジー, dark fantasy style, gloomy atmosphere, gothic", "実写風, photorealistic, realistic face, photography",
+            "コンセプトアート, concept art, digital painting, trending on artstation"
+        ],
+        "🚫 ネガティブ": [
+            "低品質, low quality, worst quality, normal quality", "人体崩壊, bad anatomy, bad proportions, missing limbs", 
+            "悪い手/指, bad hands, missing fingers, extra fingers, deformed hands", "ぼやけ/ノイズ, blurry, out of focus, noisy, jpeg artifacts", 
+            "文字/透かし, text, watermark, signature, logo, username", "奇形/醜い, deformed, mutated, ugly, gross",
+            "クロップ(見切れ), cropped, out of frame, cut off", "単調な背景, simple background, flat background"
+        ]
+    };
+    
+    let myCategoryData = defaultData;
+    let isSearching = false; 
+
+    // --- History State ---
+    let myHistory = [];
+    const MAX_HISTORY = 30;
+
+    try {
+        const savedData = localStorage.getItem('krita_manager_v6');
+        if (savedData) {
+            const parsed = JSON.parse(savedData);
+            if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+                myCategoryData = parsed;
+            }
+        }
+    } catch (e) {}
+
+    let activeTab = Object.keys(myCategoryData)[0] || "👩 女性";
+    
+    let draggedTabName = null;
+    let draggedTagIndex = null;
+
+    function saveData() {
+        localStorage.setItem('krita_manager_v6', JSON.stringify(myCategoryData));
+    }
+
+    let myPresets = {};
+    try {
+        const savedPresets = localStorage.getItem('krita_manager_presets_v1');
+        if (savedPresets) {
+            myPresets = JSON.parse(savedPresets);
+        }
+    } catch(e) {}
+
+    try {
+        const savedHist = localStorage.getItem('krita_manager_history_v1');
+        if (savedHist) {
+            myHistory = JSON.parse(savedHist);
+        }
+    } catch(e) {}
+
+    function savePresetData() {
+        localStorage.setItem('krita_manager_presets_v1', JSON.stringify(myPresets));
+    }
+
+    function saveHistoryData() {
+        localStorage.setItem('krita_manager_history_v1', JSON.stringify(myHistory));
+    }
+
+    function renderPresets() {
+        const select = document.getElementById('presetSelect');
+        select.innerHTML = '<option value="">プリセットを選択...</option>';
+        Object.keys(myPresets).forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.innerText = name;
+            select.appendChild(opt);
+        });
+    }
+
+    function savePreset() {
+        const name = prompt("プリセット名を入力してください (例: 魔女っ娘ベース):");
+        if (name && name.trim() !== "") {
+            myPresets[name] = {
+                pos: document.getElementById('posInput').value,
+                style: document.getElementById('styleInput').value,
+                neg: document.getElementById('negInput').value
+            };
+            savePresetData();
+            renderPresets();
+            document.getElementById('presetSelect').value = name;
+            
+            const status = document.getElementById('statusText');
+            status.innerText = `✅ プリセット「${name}」を保存しました`;
+            status.style.color = "var(--accent)";
+            setTimeout(() => status.innerText = "", 2000);
+        }
+    }
+
+    function loadPreset() {
+        const name = document.getElementById('presetSelect').value;
+        if (!name || !myPresets[name]) return;
+        
+        document.getElementById('posInput').value = myPresets[name].pos || "";
+        document.getElementById('styleInput').value = myPresets[name].style || "";
+        document.getElementById('negInput').value = myPresets[name].neg || "";
+
+        ['posInput', 'styleInput', 'negInput'].forEach(id => {
+            const el = document.getElementById(id);
+            el.style.backgroundColor = "#444";
+            setTimeout(() => el.style.backgroundColor = "#2a2a2a", 150);
+        });
+    }
+
+    function deletePreset() {
+        const name = document.getElementById('presetSelect').value;
+        if (!name || !myPresets[name]) return;
+        
+        if (confirm(`プリセット「${name}」を削除しますか？`)) {
+            delete myPresets[name];
+            savePresetData();
+            renderPresets();
+            document.getElementById('presetSelect').value = "";
+        }
+    }
+
+    // --- 履歴機能 ---
+    function addHistory(manual = false) {
+        const pos = document.getElementById('posInput').value.trim();
+        const sty = document.getElementById('styleInput').value.trim();
+        const neg = document.getElementById('negInput').value.trim();
+
+        if (!pos && !sty && !neg) {
+            if(manual) alert("入力が空のため保存できません。");
+            return;
+        }
+
+        // 重複チェック (直前と同じなら保存しない)
+        if (myHistory.length > 0) {
+            const last = myHistory[0];
+            if (last.pos === pos && last.style === sty && last.neg === neg) {
+                if(manual) {
+                    const status = document.getElementById('statusText');
+                    status.innerText = `ℹ️ 最新の履歴と同じ内容です`;
+                    status.style.color = "#aaa";
+                    setTimeout(() => status.innerText = "", 2000);
+                }
+                return;
+            }
+        }
+
+        const now = new Date();
+        const timeStr = `${now.getMonth()+1}/${now.getDate()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+
+        myHistory.unshift({ time: timeStr, pos, style: sty, neg });
+        if (myHistory.length > MAX_HISTORY) {
+            myHistory.pop();
+        }
+        saveHistoryData();
+        renderHistory();
+
+        if (manual) {
+            const status = document.getElementById('statusText');
+            status.innerText = `✅ 履歴に保存しました`;
+            status.style.color = "var(--accent)";
+            setTimeout(() => status.innerText = "", 2000);
+        }
+    }
+
+    function renderHistory() {
+        const list = document.getElementById('historyList');
+        list.innerHTML = '';
+        myHistory.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            
+            let preview = item.pos || item.style || item.neg || "(空)";
+            
+            div.innerHTML = `
+                <span class="history-time">${item.time}</span>
+                <div class="history-text">${preview}</div>
+                <div class="history-actions">
+                    <button class="btn-hist btn-hist-restore" onclick="restoreHistory(${index})">復元</button>
+                    <button class="btn-hist" onclick="deleteHistory(${index})">削除</button>
+                </div>
+            `;
+            list.appendChild(div);
+        });
+    }
+
+    function restoreHistory(index) {
+        const item = myHistory[index];
+        if(!item) return;
+        document.getElementById('posInput').value = item.pos || "";
+        document.getElementById('styleInput').value = item.style || "";
+        document.getElementById('negInput').value = item.neg || "";
+        
+        ['posInput', 'styleInput', 'negInput'].forEach(id => {
+            const el = document.getElementById(id);
+            el.style.backgroundColor = "#444";
+            setTimeout(() => el.style.backgroundColor = "#2a2a2a", 150);
+        });
+    }
+
+    function deleteHistory(index) {
+        myHistory.splice(index, 1);
+        saveHistoryData();
+        renderHistory();
+    }
+
+    function clearHistory() {
+        if (confirm("すべての履歴を消去しますか？")) {
+            myHistory = [];
+            saveHistoryData();
+            renderHistory();
+        }
+    }
+
+    function renderTabs() {
+        const tabsBox = document.getElementById('tabsBox');
+        tabsBox.innerHTML = '';
+        
+        Object.keys(myCategoryData).forEach(tabName => {
+            const btn = document.createElement('button');
+            btn.className = `tab-btn ${(!isSearching && tabName === activeTab) ? 'active' : ''}`;
+            btn.innerText = tabName;
+            
+            btn.draggable = true;
+            btn.addEventListener('dragstart', (e) => {
+                draggedTabName = tabName;
+                setTimeout(() => btn.classList.add('dragging'), 0);
+            });
+            btn.addEventListener('dragend', () => {
+                btn.classList.remove('dragging');
+                draggedTabName = null;
+            });
+            btn.addEventListener('dragover', (e) => {
+                e.preventDefault();
+            });
+            btn.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (draggedTabName && draggedTabName !== tabName) {
+                    const keys = Object.keys(myCategoryData);
+                    const fromIndex = keys.indexOf(draggedTabName);
+                    const toIndex = keys.indexOf(tabName);
+                    
+                    keys.splice(fromIndex, 1);
+                    keys.splice(toIndex, 0, draggedTabName);
+                    
+                    const newData = {};
+                    keys.forEach(k => { newData[k] = myCategoryData[k]; });
+                    myCategoryData = newData;
+                    
+                    saveData();
+                    renderTabs();
+                    if (!isSearching) renderTags();
+                }
+            });
+
+            btn.onclick = () => {
+                if (isSearching) clearSearch(); 
+                activeTab = tabName;
+                
+                if (tabName.includes('ネガティブ') || tabName.toLowerCase().includes('negative')) {
+                    document.querySelector('input[name="target"][value="neg"]').checked = true;
+                } else if (tabName.includes('画質') || tabName.includes('スタイル') || tabName.toLowerCase().includes('style')) {
+                    document.querySelector('input[name="target"][value="style"]').checked = true;
+                } else {
+                    document.querySelector('input[name="target"][value="pos"]').checked = true;
+                }
+                
+                renderTabs();
+                renderTags();
+            };
+            tabsBox.appendChild(btn);
+        });
+
+        const addBtn = document.createElement('button');
+        addBtn.className = 'tab-add-btn';
+        addBtn.innerText = '＋ タブ追加';
+        addBtn.onclick = addNewTab;
+        tabsBox.appendChild(addBtn);
+
+        document.getElementById('currentTabName').innerText = activeTab;
+    }
+
+    function renderTags() {
+        const tagBox = document.getElementById('tagBox');
+        tagBox.innerHTML = '';
+        
+        document.getElementById('tabActionMenu').style.display = 'flex';
+        document.getElementById('addTagMenu').style.display = 'flex';
+        
+        const tags = myCategoryData[activeTab] || [];
+        
+        if (tags.length === 0) {
+            tagBox.innerHTML = '<p style="color:#777; font-size:0.8em; grid-column: 1 / -1; text-align:center;">タグがありません。上の入力欄から追加してください。</p>';
+            return;
+        }
+
+        tags.forEach((tagStr, index) => {
+            if (typeof tagStr !== 'string') return;
+            
+            let label = tagStr, value = tagStr;
+            if (tagStr.includes(',')) {
+                const firstCommaIndex = tagStr.indexOf(',');
+                label = tagStr.slice(0, firstCommaIndex).trim();
+                value = tagStr.slice(firstCommaIndex + 1).trim();
+            }
+
+            const div = document.createElement('div');
+            div.className = 'tag-item';
+            
+            div.draggable = true;
+            div.addEventListener('dragstart', (e) => {
+                draggedTagIndex = index;
+                setTimeout(() => div.classList.add('dragging'), 0);
+            });
+            div.addEventListener('dragend', () => {
+                div.classList.remove('dragging');
+                draggedTagIndex = null;
+            });
+            div.addEventListener('dragover', (e) => {
+                e.preventDefault();
+            });
+            div.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (draggedTagIndex !== null && draggedTagIndex !== index) {
+                    const currentTags = myCategoryData[activeTab];
+                    const item = currentTags.splice(draggedTagIndex, 1)[0];
+                    currentTags.splice(index, 0, item);
+                    saveData();
+                    renderTags();
+                }
+            });
+
+            div.innerHTML = `
+                <button class="tag-btn" onclick="addText('${value.replace(/'/g, "\\'")}')">${label}<span>${value}</span></button>
+                <button class="tag-edit" onclick="editTag(${index})" title="編集">✎</button>
+                <button class="tag-del" onclick="removeTag(${index})" title="削除">×</button>
+            `;
+            tagBox.appendChild(div);
+        });
+    }
+
+    function searchTags() {
+        const query = document.getElementById('searchInput').value.toLowerCase().trim();
+        if (!query) {
+            clearSearch();
+            return;
+        }
+
+        isSearching = true;
+        document.getElementById('clearSearchBtn').style.display = 'inline-block';
+        
+        document.getElementById('tabActionMenu').style.display = 'none';
+        document.getElementById('addTagMenu').style.display = 'none';
+        document.getElementById('currentTabName').innerText = `「${query}」の検索結果`;
+
+        renderTabs(); 
+
+        const tagBox = document.getElementById('tagBox');
+        tagBox.innerHTML = '';
+
+        let matchCount = 0;
+
+        Object.keys(myCategoryData).forEach(tabName => {
+            myCategoryData[tabName].forEach((tagStr) => {
+                if (typeof tagStr !== 'string') return;
+                
+                if (tagStr.toLowerCase().includes(query)) {
+                    matchCount++;
+                    
+                    let label = tagStr, value = tagStr;
+                    if (tagStr.includes(',')) {
+                        const firstCommaIndex = tagStr.indexOf(',');
+                        label = tagStr.slice(0, firstCommaIndex).trim();
+                        value = tagStr.slice(firstCommaIndex + 1).trim();
+                    }
+
+                    const div = document.createElement('div');
+                    div.className = 'tag-item';
+                    
+                    div.innerHTML = `
+                        <button class="tag-btn" onclick="addText('${value.replace(/'/g, "\\'")}')">
+                            <span style="color:var(--accent); font-size:0.75em; margin-bottom:3px; display:inline-block;">[${tabName}]</span>
+                            <br>${label}<span>${value}</span>
+                        </button>
+                    `;
+                    tagBox.appendChild(div);
+                }
+            });
+        });
+
+        if (matchCount === 0) {
+            tagBox.innerHTML = '<p style="color:#777; font-size:0.9em; grid-column: 1 / -1; text-align:center; padding: 20px;">一致するタグが見つかりませんでした。<br>別のキーワードをお試しください。</p>';
+        }
+    }
+
+    function clearSearch() {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('clearSearchBtn').style.display = 'none';
+        isSearching = false;
+        
+        renderTabs();
+        renderTags();
+    }
+
+    function addNewTab() {
+        const tabName = prompt("新しいカテゴリ名を入力してください:");
+        if (tabName && tabName.trim() !== "") {
+            if (myCategoryData[tabName]) {
+                alert("そのタブは既に存在します。");
+                return;
+            }
+            myCategoryData[tabName] = [];
+            activeTab = tabName;
+            document.querySelector('input[name="target"][value="pos"]').checked = true;
+            saveData();
+            renderTabs();
+            renderTags();
+        }
+    }
+
+    function renameCurrentTab() {
+        const newName = prompt("新しいタブ名を入力してください:", activeTab);
+        if (newName && newName.trim() !== "" && newName !== activeTab) {
+            if (myCategoryData[newName]) {
+                alert("その名前のタブは既に存在します。");
+                return;
+            }
+            
+            const newData = {};
+            for (const key in myCategoryData) {
+                if (key === activeTab) {
+                    newData[newName] = myCategoryData[key];
+                } else {
+                    newData[key] = myCategoryData[key];
+                }
+            }
+            myCategoryData = newData;
+            activeTab = newName;
+            
+            saveData();
+            renderTabs();
+            renderTags();
+        }
+    }
+
+    function duplicateCurrentTab() {
+        const newName = prompt("複製先の新しいタブ名を入力してください:", activeTab + " (コピー)");
+        if (newName && newName.trim() !== "") {
+            if (myCategoryData[newName]) {
+                alert("その名前のタブは既に存在します。別の名前を指定してください。");
+                return;
+            }
+            
+            myCategoryData[newName] = [...myCategoryData[activeTab]];
+            activeTab = newName;
+            
+            if (activeTab.includes('ネガティブ') || activeTab.toLowerCase().includes('negative')) {
+                document.querySelector('input[name="target"][value="neg"]').checked = true;
+            } else if (activeTab.includes('画質') || activeTab.includes('スタイル') || activeTab.toLowerCase().includes('style')) {
+                document.querySelector('input[name="target"][value="style"]').checked = true;
+            } else {
+                document.querySelector('input[name="target"][value="pos"]').checked = true;
+            }
+            
+            saveData();
+            renderTabs();
+            renderTags();
+        }
+    }
+
+    function removeCurrentTab() {
+        const keys = Object.keys(myCategoryData);
+        if (keys.length <= 1) {
+            alert("最後のタブは削除できません。");
+            return;
+        }
+        if (confirm(`タブ「${activeTab}」と、その中のすべてのタグを削除しますか？`)) {
+            delete myCategoryData[activeTab];
+            activeTab = Object.keys(myCategoryData)[0]; 
+            
+            if (activeTab.includes('ネガティブ') || activeTab.toLowerCase().includes('negative')) {
+                document.querySelector('input[name="target"][value="neg"]').checked = true;
+            } else if (activeTab.includes('画質') || activeTab.includes('スタイル') || activeTab.toLowerCase().includes('style')) {
+                document.querySelector('input[name="target"][value="style"]').checked = true;
+            } else {
+                document.querySelector('input[name="target"][value="pos"]').checked = true;
+            }
+
+            saveData();
+            renderTabs();
+            renderTags();
+        }
+    }
+
+    function addNewTag() {
+        const input = document.getElementById('newTagInput');
+        if (input.value.includes(',')) {
+            myCategoryData[activeTab].push(input.value.trim());
+            saveData();
+            renderTags();
+            input.value = '';
+        } else {
+            alert('「日本語ラベル, 英語タグ」の形式で入力してください（カンマ区切り）。');
+        }
+    }
+
+    function editTag(index) {
+        const currentVal = myCategoryData[activeTab][index];
+        const newVal = prompt("タグを編集してください (日本語ラベル, 英語タグ):", currentVal);
+        
+        if (newVal !== null && newVal.trim() !== "") {
+            if (newVal.includes(',')) {
+                myCategoryData[activeTab][index] = newVal.trim();
+                saveData();
+                renderTags();
+            } else {
+                alert('「日本語ラベル, 英語タグ」の形式で入力してください（カンマ区切り）。');
+            }
+        }
+    }
+
+    function removeTag(index) {
+        if(confirm('このタグを削除しますか？')) {
+            myCategoryData[activeTab].splice(index, 1);
+            saveData();
+            renderTags();
+        }
+    }
+
+    function addText(text) {
+        const targetType = document.querySelector('input[name="target"]:checked').value;
+        let inputId = targetType === 'pos' ? 'posInput' : targetType === 'neg' ? 'negInput' : 'styleInput';
+        
+        const input = document.getElementById(inputId);
+        let current = input.value;
+        
+        const startIndex = current.indexOf(text);
+
+        if (startIndex !== -1) {
+            input.focus();
+            input.setSelectionRange(startIndex, startIndex + text.length);
+            
+            input.style.backgroundColor = "#2a4a6a";
+            setTimeout(() => input.style.backgroundColor = "#2a2a2a", 200);
+        } else {
+            let currentTrimmed = current.trim();
+            if (currentTrimmed === "") {
+                input.value = text;
+            } else {
+                input.value = currentTrimmed.replace(/,$/, "") + ", " + text;
+            }
+            
+            input.style.backgroundColor = "#444";
+            setTimeout(() => input.style.backgroundColor = "#2a2a2a", 150);
+            input.focus();
+        }
+    }
+
+    function copyPrompt(type) {
+        let final = "";
+        const status = document.getElementById('statusText');
+        
+        // コピー時に自動的に履歴を保存
+        addHistory(false);
+        
+        if (type === 'pos') {
+            const pos = document.getElementById('posInput').value.trim();
+            const sty = document.getElementById('styleInput').value.trim();
+            final = [pos, sty].filter(x => x).join(', ');
+            status.style.color = "var(--accent)";
+        } else {
+            final = document.getElementById('negInput').value.trim();
+            status.style.color = "var(--neg)";
+        }
+
+        if(final) {
+            navigator.clipboard.writeText(final).then(() => {
+                status.innerText = `✅ Copied!`;
+                setTimeout(() => status.innerText = "", 2000);
+            });
+        }
+    }
+
+    function clearAll() {
+        if(confirm('すべてのテキストエリアをクリアしますか？')) {
+            document.getElementById('posInput').value = '';
+            document.getElementById('styleInput').value = '';
+            document.getElementById('negInput').value = '';
+        }
+    }
+
+    function flashInput(el) {
+        el.style.backgroundColor = "#555";
+        setTimeout(() => el.style.backgroundColor = "#2a2a2a", 150);
+    }
+
+    function changeWeight(prefix, suffix) {
+        const textareas = ['posInput', 'styleInput', 'negInput'];
+        let applied = false;
+
+        for (let id of textareas) {
+            const el = document.getElementById(id);
+            if (el.selectionStart !== el.selectionEnd) {
+                const start = el.selectionStart;
+                const end = el.selectionEnd;
+                const text = el.value;
+                const selectedText = text.substring(start, end);
+                
+                el.value = text.substring(0, start) + prefix + selectedText + suffix + text.substring(end);
+                el.setSelectionRange(start, end + prefix.length + suffix.length);
+                el.focus();
+                flashInput(el);
+                
+                applied = true;
+                break;
+            }
+        }
+
+        if (!applied) alert("テキストエリア内で、調整したい単語を選択してからボタンを押してください。\n（※左側のタグ一覧からクリックして選択することもできます）");
+    }
+
+    function decreaseWeight() {
+        const textareas = ['posInput', 'styleInput', 'negInput'];
+        let applied = false;
+
+        for (let id of textareas) {
+            const el = document.getElementById(id);
+            if (el.selectionStart !== el.selectionEnd) {
+                const start = el.selectionStart;
+                const end = el.selectionEnd;
+                const text = el.value;
+                const selectedText = text.substring(start, end);
+
+                if ((selectedText.startsWith('(') && selectedText.endsWith(')')) ||
+                    (selectedText.startsWith('[') && selectedText.endsWith(']'))) {
+                    
+                    const innerText = selectedText.substring(1, selectedText.length - 1);
+                    el.value = text.substring(0, start) + innerText + text.substring(end);
+                    
+                    el.setSelectionRange(start, end - 2);
+                    el.focus();
+                    flashInput(el);
+                    applied = true;
+                    break;
+                } 
+                else if (start > 0 && end < text.length) {
+                    const charBefore = text.charAt(start - 1);
+                    const charAfter = text.charAt(end);
+                    
+                    if ((charBefore === '(' && charAfter === ')') || 
+                        (charBefore === '[' && charAfter === ']')) {
+                        
+                        el.value = text.substring(0, start - 1) + selectedText + text.substring(end + 1);
+                        
+                        el.setSelectionRange(start - 1, end - 1);
+                        el.focus();
+                        flashInput(el);
+                        applied = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!applied) {
+            alert("ウェイトを減らしたい単語を選択してください。\n（例: 「(単語)」を丸ごと選択、または括弧の中の「単語」だけを選択）");
+        }
+    }
+
+    function exportJSON() {
+        const data = JSON.stringify(myCategoryData, null, 2);
+        const blob = new Blob([data], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'krita_prompts_fantasy_rpg.json';
+        a.click();
+    }
+
+    function importJSON(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const imported = JSON.parse(e.target.result);
+                if (typeof imported === 'object' && !Array.isArray(imported)) {
+                    if (confirm('現在のリストを上書きしますか？')) {
+                        myCategoryData = imported;
+                        activeTab = Object.keys(myCategoryData)[0] || "👩 女性";
+                        
+                        if (activeTab.includes('ネガティブ') || activeTab.toLowerCase().includes('negative')) {
+                            document.querySelector('input[name="target"][value="neg"]').checked = true;
+                        } else if (activeTab.includes('画質') || activeTab.includes('スタイル') || activeTab.toLowerCase().includes('style')) {
+                            document.querySelector('input[name="target"][value="style"]').checked = true;
+                        } else {
+                            document.querySelector('input[name="target"][value="pos"]').checked = true;
+                        }
+
+                        saveData();
+                        renderTabs();
+                        renderTags();
+                    }
+                } else {
+                    alert('新しいカテゴリ形式のファイルではありません。（古いバージョンのファイルは読み込めません）');
+                }
+            } catch (err) { alert('無効なファイルです'); }
+        };
+        reader.readAsText(file);
+    }
+
+    // --- プリセット単独の入出力機能 ---
+    function exportPresets() {
+        if (Object.keys(myPresets).length === 0) {
+            alert("出力するプリセットがありません。");
+            return;
+        }
+        const data = JSON.stringify(myPresets, null, 2);
+        const blob = new Blob([data], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'krita_presets.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function importPresets(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const imported = JSON.parse(e.target.result);
+                if (typeof imported === 'object' && !Array.isArray(imported)) {
+                    let importedCount = 0;
+                    for (const key in imported) {
+                        // 簡単な構造チェック
+                        if (imported[key] && typeof imported[key] === 'object' && ('pos' in imported[key] || 'style' in imported[key] || 'neg' in imported[key])) {
+                            let newName = key;
+                            // 重複チェック
+                            if (myPresets[newName]) {
+                                if(!confirm(`プリセット「${newName}」は既に存在します。上書きしますか？\n（キャンセルを選ぶと別名で新規追加されます）`)) {
+                                    let counter = 1;
+                                    while(myPresets[`${key} (読込${counter})`]) {
+                                        counter++;
+                                    }
+                                    newName = `${key} (読込${counter})`;
+                                }
+                            }
+                            myPresets[newName] = {
+                                pos: imported[key].pos || "",
+                                style: imported[key].style || "",
+                                neg: imported[key].neg || ""
+                            };
+                            importedCount++;
+                        }
+                    }
+                    
+                    if (importedCount > 0) {
+                        savePresetData();
+                        renderPresets();
+                        alert(`${importedCount}個のプリセットを読み込みました！`);
+                    } else {
+                        alert('有効なプリセットデータが見つかりませんでした。');
+                    }
+                } else {
+                    alert('プリセット形式のファイルではありません。');
+                }
+            } catch (err) { 
+                alert('無効なファイルです（JSON形式ではありません）。'); 
+            }
+            event.target.value = ''; // 連続で同じファイルを読めるようにリセット
+        };
+        reader.readAsText(file);
+    }
+
+    // --- タブ単位の入出力機能 ---
+    function exportCurrentTab() {
+        const dataToExport = {};
+        dataToExport[activeTab] = myCategoryData[activeTab];
+        const data = JSON.stringify(dataToExport, null, 2);
+        const blob = new Blob([data], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `tab_${activeTab}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function importTab(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const imported = JSON.parse(e.target.result);
+                if (typeof imported === 'object' && !Array.isArray(imported)) {
+                    let importedCount = 0;
+                    for (const key in imported) {
+                        if (Array.isArray(imported[key])) {
+                            let newTabName = key;
+                            // 重複チェック
+                            if (myCategoryData[newTabName]) {
+                                if(!confirm(`タブ「${newTabName}」は既に存在します。上書きしますか？\n（キャンセルを選ぶと別名で新規追加されます）`)) {
+                                    let counter = 1;
+                                    while(myCategoryData[`${key} (読込${counter})`]) {
+                                        counter++;
+                                    }
+                                    newTabName = `${key} (読込${counter})`;
+                                }
+                            }
+                            myCategoryData[newTabName] = imported[key];
+                            activeTab = newTabName; // 読み込んだタブを開く
+                            importedCount++;
+                        }
+                    }
+                    
+                    if (importedCount > 0) {
+                        saveData();
+                        renderTabs();
+                        renderTags();
+                        alert(`${importedCount}個のタブを読み込みました！`);
+                    } else {
+                        alert('有効なタブデータが見つかりませんでした。');
+                    }
+                } else {
+                    alert('タブ形式のファイルではありません。');
+                }
+            } catch (err) { 
+                alert('無効なファイルです（JSON形式ではありません）。'); 
+            }
+            event.target.value = ''; // 連続で同じファイルを読めるようにリセット
+        };
+        reader.readAsText(file);
+    }
+
+    // --- タグのみをテキスト出力する機能 ---
+    function exportTagsText() {
+        const tags = myCategoryData[activeTab] || [];
+        if (tags.length === 0) {
+            alert("出力するタグがありません。");
+            return;
+        }
+        const textContent = tags.join('\n');
+        const blob = new Blob([textContent], {type: 'text/plain;charset=utf-8'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `tags_${activeTab}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // --- テキストファイルからタグを読み込む機能 ---
+    function importTagsText(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target.result;
+            const lines = text.split(/\r?\n/);
+            let addedCount = 0;
+            
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (trimmed !== "") {
+                    // 既存のタグと重複していなければ追加
+                    if (!myCategoryData[activeTab].includes(trimmed)) {
+                        myCategoryData[activeTab].push(trimmed);
+                        addedCount++;
+                    }
+                }
+            });
+            
+            if (addedCount > 0) {
+                saveData();
+                renderTags();
+                alert(`${addedCount}個の新しいタグを「${activeTab}」に読み込みました！`);
+            } else {
+                alert('追加できる新しいタグが見つかりませんでした。（形式エラー、または全て重複しています）');
+            }
+            
+            // inputをリセットして同じファイルを再度選べるようにする
+            event.target.value = ''; 
+        };
+        reader.readAsText(file);
+    }
+
+    document.getElementById('newTagInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') addNewTag();
+    });
+
+    renderTabs();
+    renderTags();
+    renderPresets();
+    renderHistory();
+</script>
+
+</body>
+</html>
